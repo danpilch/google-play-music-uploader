@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+# Maintainer Dan Pilch <dan@ctrlengineering.com>
+# Description: Upload music to Google Music Lazily
+
+from gmusicapi import Musicmanager
+import argparse
+import os
+
+
+class GoogleMusicUpload(object):
+    def __init__(self):
+        self.cwd = os.getcwd()
+        self.targets = [each for each in os.listdir(self.cwd) if each.endswith(('.mp3', '.m4a'))]
+        self.client = Musicmanager()
+        self.client.login()
+        
+    def upload(self):
+        if len(self.targets) >= 1:
+            for f in self.targets:
+                try:
+                    self.client.upload(f, transcode_quality="320k", enable_matching=True)
+                except Exception as e:
+                    pass
+                print "Uploaded: {0}".format(f)
+        else:
+            print "No files to upload"
+
+    def authenticate(self):
+        from gmusicapi import Mobileclient
+        from getpass import getpass
+        
+        self.client.perform_oauth()
+           
+
+def main():
+    parser = argparse.ArgumentParser(description="Upload music to Google Play Music")
+    parser.add_argument('--authenticate', '-a', help="Perform OAuth request for Google auth", action="store_true", required=False, default=None)
+    args = parser.parse_args()
+
+    run = GoogleMusicUpload()
+
+    if args.authenticate:
+        run.authenticate()
+
+    run.upload()
+
+if __name__ == "__main__":
+    main()
