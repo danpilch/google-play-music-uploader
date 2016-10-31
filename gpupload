@@ -3,6 +3,8 @@
 # Description: Upload music to Google Music Lazily
 # -*- encoding: utf8 -*-
 
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from gmusicapi import Musicmanager
 import argparse
 import sys
@@ -12,21 +14,28 @@ import os
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-class GoogleMusicUpload(object):
-    def __init__(self):
+class GoogleMusicUpload(threading.Thread):
+    def __init__(self, thread_pool):
+        self.threads = []
+        self.thread_pool = thread_pool
         self.wanted_filetypes = ('.mp3', '.flac')
         self.cwd = os.getcwd()
         self.client = Musicmanager()
         self.client.login()
         
-    def upload(self, files):
-        if len(files) >= 1:
-            for f in files:
-                try:
-                    self.client.upload(f, transcode_quality="320k", enable_matching=True)
-                except Exception as e:
-                    pass
-                print "Uploaded: {0}".format(str(f))
+    def spawn_threads(self, files):
+        for f in files:
+            t = threading.Thread(target=self.upload, args=([f],))
+            self.threads.append(t)
+            t.start()
+
+    def upload(self, f):
+        if len(f) >= 1:
+            try:
+                self.client.upload(f, transcode_quality="320k", enable_matching=True)
+            except Exception as e:
+                pass
+            print "Uploaded: {0}".format(f.split('\n'))
         else:
             print "No files to upload"
 
@@ -56,9 +65,10 @@ def main():
     parser = argparse.ArgumentParser(description="Upload music to Google Play Music")
     parser.add_argument('--authenticate', '-a', help="Perform OAuth request for Google auth", action="store_true", required=False, default=None)
     parser.add_argument('--recurse', '-r', help="Recursively look for music in all directories", action="store_true", required=False, default=None)
+    parser.add_argument('--threads', '-t', help="How many threads to spawn concurrently", required=False, default=5, type=int)
     args = parser.parse_args()
 
-    run = GoogleMusicUpload()
+    run = GoogleMusicUpload(thread_pool=args.threads)
 
     if args.authenticate:
         run.authenticate()
