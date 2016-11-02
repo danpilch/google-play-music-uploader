@@ -3,6 +3,8 @@
 # Description: Upload music to Google Music Lazily
 # -*- encoding: utf8 -*-
 
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from gmusicapi import Musicmanager
 import argparse
 import sys
@@ -12,23 +14,46 @@ import os
 reload(sys)
 sys.setdefaultencoding('utf8')
 
-class GoogleMusicUpload(object):
-    def __init__(self):
+class GoogleMusicUpload(threading.Thread):
+    def __init__(self, thread_pool):
+        self.threads = []
+        self.thread_pool = thread_pool
         self.wanted_filetypes = ('.mp3', '.flac')
         self.cwd = os.getcwd()
         self.client = Musicmanager()
         self.client.login()
         
-    def upload(self, files):
-        if len(files) >= 1:
+    def thread_upload(self, files):
+
+        with ThreadPoolExecutor(max_workers=self.thread_pool) as executor:
             for f in files:
-                try:
-                    self.client.upload(f, transcode_quality="320k", enable_matching=True)
-                except Exception as e:
-                    pass
-                print "Uploaded: {0}".format(str(f))
+                future = executor.submit(self.upload, f)
+
+    def upload(self, f):
+        print "Found: {0}".format(f)
+        try:
+            self.client.upload(str(f), transcode_quality="320k", enable_matching=True)
+
+        except Exception as e:
+            raise e
+
+    def find_music(self, recurse):
+        
+        # Recursively look for files in subdirectories... Respect, walk \m/
+        if recurse:
+            print "recursing into directories to find music"
+            found_files = []
+            for root, dirs, files in os.walk(self.cwd):
+                for f in files:
+                    if f.endswith(self.wanted_filetypes):
+                        found_files.append(os.path.join(root, f))
+
         else:
-            print "No files to upload"
+            # Just look in the current directory
+            print "looking in the current directory for music"
+            found_files = [each for each in os.listdir(self.cwd) if each.endswith(self.wanted_filetypes)]
+        
+        return found_files
 
     def authenticate(self):
         from gmusicapi import Mobileclient
@@ -36,34 +61,33 @@ class GoogleMusicUpload(object):
         
         self.client.perform_oauth()
 
-    def find_music(self, recurse):
-        
-        # Recursively look for files in subdirectories... Respect, walk \m/
-        if recurse:
-            found_files = []
-            for root, dirs, files in os.walk(self.cwd):
-                for f in files:
-                    if f.endswith(self.wanted_filetypes):
-                        found_files.append(os.path.join(root, str(f)))
-
-        else:
-            # Just look in the current directory
-            found_files = [each for each in os.listdir(self.cwd) if each.endswith(self.wanted_filetypes)]
-        
-        return found_files
-
 def main():
     parser = argparse.ArgumentParser(description="Upload music to Google Play Music")
     parser.add_argument('--authenticate', '-a', help="Perform OAuth request for Google auth", action="store_true", required=False, default=None)
     parser.add_argument('--recurse', '-r', help="Recursively look for music in all directories", action="store_true", required=False, default=None)
+    parser.add_argument('--threads', '-t', help="How many threads to spawn concurrently", required=False, default=5, type=int)
     args = parser.parse_args()
 
-    run = GoogleMusicUpload()
+    run = GoogleMusicUpload(thread_pool=args.threads)
+    print "Starting GooglePlay Music Uploader"
 
     if args.authenticate:
         run.authenticate()
+        return
 
-    run.upload(run.find_music(args.recurse))
+    # Find music
+    music = run.find_music(args.recurse)
+
+    if len(music) < 1:
+        print "No Files to upload"
+        return
+
+    if args.threads >= 1:
+        run.thread_upload(music)
+    else:
+        run.upload(music)
+
+    print "Finished"
 
 if __name__ == "__main__":
     main()

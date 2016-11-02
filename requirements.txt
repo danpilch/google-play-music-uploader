@@ -1,1 +1,2 @@
 gmusicapi==7.0.0
+futures
